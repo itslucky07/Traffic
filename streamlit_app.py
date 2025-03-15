@@ -5,7 +5,7 @@ from geopy.geocoders import Nominatim
 import requests
 from math import radians, cos, sin, asin, sqrt
 
-# 🚦 TomTom API Key (Replace with your actual API key)
+# 🚦 Use your TomTom API Key
 TOMTOM_API_KEY = "shXffocf9KYkZVUQviB8JYApUg0NSVoG"
 
 # Set up Streamlit UI
@@ -94,9 +94,10 @@ def show_traffic_map():
     main_time_hr = f"{main_time//3600}h {main_time%3600//60}m" if main_time else "N/A"
     alt_time_hr = f"{alt_time//3600}h {alt_time%3600//60}m" if alt_time else "N/A"
 
-    # Draw Main Route in Blue
+    # Draw Main Route in Red (Heavy Traffic) or Blue (No Traffic)
     if main_route:
-        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in main_route], color="blue", weight=6, tooltip="Main Route").add_to(m)
+        route_color = "red" if start_color == "red" or end_color == "red" else "blue"
+        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in main_route], color=route_color, weight=6, tooltip="Main Route").add_to(m)
 
     # Draw Alternative Route in Green
     if alt_route:
