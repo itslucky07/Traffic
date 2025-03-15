@@ -64,5 +64,5 @@ if location:
 """
 
 # Save to Google Drive
-with open("/content/drive/MyDrive/app.py", "w") as file:
+with open("/content/drive/MyDrive/streamlit_app.py", "w") as file:
     file.write(app_code)
