@@ -1,48 +1,68 @@
+app_code = """ 
 import streamlit as st
-import requests
 import folium
 from streamlit_folium import folium_static
 from geopy.geocoders import Nominatim
+import requests
 
-st.set_page_config(page_title="India Traffic Monitor", layout="wide")
+st.set_page_config(page_title="🚦 India Traffic Live", layout="wide")
 
-st.title("🚦 Live Traffic Monitoring in India 🇮🇳")
+st.title("🚦 Live Traffic Monitoring for India 🇮🇳")
 
-def get_osm_traffic_data(location):
+def get_lat_lon(location):
     geolocator = Nominatim(user_agent="geoapi")
     location_data = geolocator.geocode(location + ", India")
     
-    if not location_data:
-        return "⚠️ Location not found. Try another one."
+    if location_data:
+        return location_data.latitude, location_data.longitude
+    return None, None
 
-    lat, lon = location_data.latitude, location_data.longitude
-    traffic_url = f"https://api.openstreetmap.org/api/0.6/map?bbox={lon-0.01},{lat-0.01},{lon+0.01},{lat+0.01}"
-    response = requests.get(traffic_url)
+def fetch_traffic_data(lat, lon):
+    # Dummy simulation for traffic levels (Replace with real API like TomTom, OpenTraffic, or Mapbox)
+    import random
+    traffic_levels = ["Low", "Medium", "High"]
+    return random.choice(traffic_levels)
 
-    if response.status_code == 200:
-        return f"🚦 Live traffic data available at {location}, India."
-    else:
-        return "⚠️ No traffic data found for this location."
+def get_color(traffic_level):
+    return {
+        "Low": "green",
+        "Medium": "orange",
+        "High": "red"
+    }.get(traffic_level, "gray")
 
 def show_traffic_map(location):
-    geolocator = Nominatim(user_agent="geoapi")
-    location_data = geolocator.geocode(location + ", India")
+    lat, lon = get_lat_lon(location)
 
-    if location_data:
-        lat, lon = location_data.latitude, location_data.longitude
-        traffic_map = folium.Map(location=[lat, lon], zoom_start=13)
-        folium.Marker([lat, lon], popup="Traffic Location", icon=folium.Icon(color="red")).add_to(traffic_map)
-        return traffic_map
-    else:
+    if not lat or not lon:
         return "⚠️ Invalid location."
 
+    # Create map
+    traffic_map = folium.Map(location=[lat, lon], zoom_start=13)
+
+    # Simulating 5 nearby roads with random traffic data
+    for i in range(5):
+        road_lat = lat + (i * 0.002)
+        road_lon = lon + (i * 0.002)
+        traffic_status = fetch_traffic_data(road_lat, road_lon)
+        color = get_color(traffic_status)
+
+        folium.Marker(
+            [road_lat, road_lon], 
+            popup=f"Traffic: {traffic_status}", 
+            icon=folium.Icon(color=color)
+        ).add_to(traffic_map)
+
+    return traffic_map
+
+# User Input
 location = st.text_input("Enter an Indian city (e.g., Delhi, Mumbai, Bangalore)")
 
 if location:
-    st.subheader("Traffic Data Status:")
-    traffic_info = get_osm_traffic_data(location)
-    st.write(traffic_info)
+    st.subheader("🚥 Live Traffic Data")
+    traffic_map = show_traffic_map(location)
+    folium_static(traffic_map)
+"""
 
-    st.subheader("Live Traffic Map:")
-    map_output = show_traffic_map(location)
-    folium_static(map_output)
+# Save to Google Drive
+with open("/content/drive/MyDrive/app.py", "w") as file:
+    file.write(app_code)
