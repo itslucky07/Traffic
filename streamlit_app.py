@@ -1,133 +1,84 @@
 import streamlit as st
 import folium
-import requests
 from streamlit_folium import st_folium
+from geopy.geocoders import Nominatim
+import requests
 
-# Set your TomTom API key here
+# 🗺️ TomTom API Key (Replace with your valid API Key)
 TOMTOM_API_KEY = "QSX465abuQsJUJEWPdBZ8S4K0ZrqsqQ7"
 
+st.set_page_config(page_title="🚦 India Live Traffic & Route", layout="wide")
+st.title("🚦 Live Traffic & Route Finder for India 🇮🇳")
 
-# Function to get route data from TomTom
+# Sidebar Inputs
+st.sidebar.header("📍 Enter Locations")
+current_location = st.sidebar.text_input("Your Current Location", placeholder="e.g., Connaught Place, Delhi")
+destination = st.sidebar.text_input("Destination", placeholder="e.g., India Gate, Delhi")
+
+# Function to get latitude and longitude
+def get_lat_lon(location):
+    geolocator = Nominatim(user_agent="geoapi", timeout=10)
+    location_data = geolocator.geocode(location + ", India")
+    return (location_data.latitude, location_data.longitude) if location_data else (None, None)
+
+# Function to fetch traffic status for a point
+def get_traffic_status(lat, lon):
+    url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point={lat},{lon}&key={TOMTOM_API_KEY}"
+    response = requests.get(url).json()
+    if "flowSegmentData" in response:
+        speed = response["flowSegmentData"]["currentSpeed"]
+        free_flow = response["flowSegmentData"]["freeFlowSpeed"]
+        return speed, free_flow
+    return None, None
+
+# Function to determine traffic color
+def traffic_color(speed, free_flow):
+    if not speed or not free_flow:
+        return "gray"
+    if speed >= free_flow * 0.8:
+        return "blue"  # No Traffic
+    elif speed >= free_flow * 0.5:
+        return "orange"  # Moderate Traffic
+    return "red"  # Heavy Traffic
+
+# Function to get route data
 def get_route(start_lat, start_lon, end_lat, end_lon):
-    url = f"https://api.tomtom.com/routing/1/calculateRoute/{start_lat},{start_lon}:{end_lat},{end_lon}/json?key={TOMTOM_API_KEY}&traffic=true"
+    url = f"https://api.tomtom.com/routing/1/calculateRoute/{start_lat},{start_lon}:{end_lat},{end_lon}/json?key={TOMTOM_API_KEY}"
+    response = requests.get(url).json()
     
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+    if "routes" in response:
+        route_points = response["routes"][0]["legs"][0]["points"]
+        return route_points
+    return None
 
-        if "routes" in data and len(data["routes"]) > 0:
-            route = data["routes"][0]
-            points = route["legs"][0]["points"]
-            traffic_data = route.get("summary", {})
-            return points, traffic_data
-        else:
-            st.error("No routes found! Please check your locations.")
-            return None, None
+# Function to generate the map with traffic colors
+def show_traffic_map():
+    start = get_lat_lon(current_location)
+    end = get_lat_lon(destination)
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"API Error: {e}")
-        return None, None
+    if not start[0] or not end[0]:
+        st.error("⚠️ Invalid locations. Please check your input.")
+        return folium.Map(location=[20.5937, 78.9629], zoom_start=5)  # Default map of India
 
-# Function to get live traffic conditions
-def get_traffic_info(start_lat, start_lon, end_lat, end_lon):
-    url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point={start_lat},{start_lon}&key={TOMTOM_API_KEY}"
-    
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
+    m = folium.Map(location=start, zoom_start=12)
 
-        if "flowSegmentData" in data:
-            return data["flowSegmentData"]
-        else:
-            return None
+    # Get Route
+    route = get_route(*start, *end)
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"Traffic API Error: {e}")
-        return None
+    if route:
+        for i in range(len(route) - 1):
+            lat1, lon1 = route[i]["latitude"], route[i]["longitude"]
+            lat2, lon2 = route[i + 1]["latitude"], route[i + 1]["longitude"]
 
-# Function to generate map with traffic conditions
-def show_traffic_map(start_lat, start_lon, end_lat, end_lon):
-    points, traffic_data = get_route(start_lat, start_lon, end_lat, end_lon)
+            # Fetch traffic for this segment
+            speed, free_flow = get_traffic_status(lat1, lon1)
+            color = traffic_color(speed, free_flow)
 
-    if not points:
-        return None
-
-    # Create map centered at the start location
-    m = folium.Map(location=[start_lat, start_lon], zoom_start=12)
-
-    # Traffic colors based on speed ratio
-    traffic_color = {"HEAVY": "red", "MODERATE": "orange", "FREE_FLOW": "blue"}
-
-    # Plot route with traffic conditions
-    for i in range(len(points) - 1):
-        segment_start = points[i]
-        segment_end = points[i + 1]
-
-        # Fetch traffic info for each segment
-        traffic_info = get_traffic_info(segment_start["latitude"], segment_start["longitude"], end_lat, end_lon)
-        if traffic_info:
-            status = traffic_info["currentSpeed"]
-            free_flow_speed = traffic_info["freeFlowSpeed"]
-            speed_ratio = status / free_flow_speed if free_flow_speed else 1
-
-            # Define traffic conditions
-            if speed_ratio < 0.4:
-                color = "red"  # Heavy traffic
-            elif speed_ratio < 0.7:
-                color = "orange"  # Moderate traffic
-            else:
-                color = "blue"  # Free flow
-        else:
-            color = "blue"  # Default color if no traffic info
-
-        # Add polyline to map
-        folium.PolyLine(
-            [(segment_start["latitude"], segment_start["longitude"]),
-             (segment_end["latitude"], segment_end["longitude"])],
-            color=color,
-            weight=6,
-            opacity=0.7
-        ).add_to(m)
-
-    # Add start and end markers
-    folium.Marker([start_lat, start_lon], popup="Start", icon=folium.Icon(color="green")).add_to(m)
-    folium.Marker([end_lat, end_lon], popup="Destination", icon=folium.Icon(color="blue")).add_to(m)
+            # Draw segment with traffic color
+            folium.PolyLine([(lat1, lon1), (lat2, lon2)], color=color, weight=6).add_to(m)
 
     return m
 
-# Streamlit App UI
-st.title("🚗 Live Traffic Route Finder")
-st.markdown("Find the best route with live traffic conditions in India!")
-
-# User inputs
-start_location = st.text_input("Enter Start Location (e.g., Mumbai)")
-destination = st.text_input("Enter Destination (e.g., Pune)")
-
-if st.button("Find Route"):
-    if start_location and destination:
-        # Get coordinates from TomTom geocoding API
-        def get_coordinates(location):
-            geo_url = f"https://api.tomtom.com/search/2/geocode/{location}.json?key={TOMTOM_API_KEY}"
-            try:
-                response = requests.get(geo_url)
-                response.raise_for_status()
-                geo_data = response.json()
-                if "results" in geo_data and len(geo_data["results"]) > 0:
-                    return geo_data["results"][0]["position"]["lat"], geo_data["results"][0]["position"]["lon"]
-                else:
-                    return None, None
-            except:
-                return None, None
-
-        start_lat, start_lon = get_coordinates(start_location)
-        end_lat, end_lon = get_coordinates(destination)
-
-        if start_lat and end_lat:
-            map_display = show_traffic_map(start_lat, start_lon, end_lat, end_lon)
-            if map_display:
-                st_folium(map_display, width=800, height=500)
-        else:
-            st.error("Invalid location entered. Please try again.")
-
+# Show Map in Streamlit
+if current_location and destination:
+    st_folium(show_traffic_map(), width=1200, height=600)
