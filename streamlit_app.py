@@ -1,13 +1,12 @@
 import streamlit as st
 import folium
-from streamlit_folium import folium_static
+from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 import requests
 from math import radians, cos, sin, asin, sqrt
 
 # 🚦 TomTom API Key (Replace with your actual API key)
 TOMTOM_API_KEY = "shXffocf9KYkZVUQviB8JYApUg0NSVoG"
-
 
 # Set up Streamlit UI
 st.set_page_config(page_title="🚦 India Traffic & Route Finder", layout="wide")
@@ -92,8 +91,8 @@ def show_traffic_map():
     alt_route, alt_distance, alt_time = get_route(*start, *end, avoid_traffic=True)
 
     # Convert Time to Hours & Minutes
-    main_time_hr = f"{main_time//3600}h {main_time%3600//60}m"
-    alt_time_hr = f"{alt_time//3600}h {alt_time%3600//60}m"
+    main_time_hr = f"{main_time//3600}h {main_time%3600//60}m" if main_time else "N/A"
+    alt_time_hr = f"{alt_time//3600}h {alt_time%3600//60}m" if alt_time else "N/A"
 
     # Draw Main Route in Blue
     if main_route:
@@ -113,4 +112,4 @@ def show_traffic_map():
 
 # Display Results
 if current_location and destination:
-    folium_static(show_traffic_map())
+    st_folium(show_traffic_map(), width=1200, height=600)
