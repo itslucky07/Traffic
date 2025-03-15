@@ -3,17 +3,13 @@ import folium
 from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 import requests
-from math import radians, cos, sin, asin, sqrt
 
 # 🚦 Use your TomTom API Key
 TOMTOM_API_KEY = "shXffocf9KYkZVUQviB8JYApUg0NSVoG"
 
-# Set up Streamlit UI
 st.set_page_config(page_title="🚦 India Traffic & Route Finder", layout="wide")
 
-# Header Section
-st.markdown("<h1 style='text-align: center;'>🚦 India Traffic & Route Finder 🛣️</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align: center;'>Find the best routes & avoid traffic 🚗</h4>", unsafe_allow_html=True)
+st.title("🚦 India Traffic & Route Finder 🛣️")
 
 # Sidebar Inputs
 st.sidebar.header("📍 Enter Locations")
@@ -26,7 +22,7 @@ def get_lat_lon(location):
     location_data = geolocator.geocode(location + ", India")
     return (location_data.latitude, location_data.longitude) if location_data else (None, None)
 
-# Function to fetch traffic data from TomTom API
+# Function to fetch traffic data
 def get_traffic_status(lat, lon):
     url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point={lat},{lon}&key={TOMTOM_API_KEY}"
     response = requests.get(url).json()
@@ -34,7 +30,7 @@ def get_traffic_status(lat, lon):
         return response["flowSegmentData"]["currentSpeed"], response["flowSegmentData"]["freeFlowSpeed"]
     return None, None
 
-# Function to fetch best route
+# Function to fetch route
 def get_route(start_lat, start_lon, end_lat, end_lon, avoid_traffic=False):
     avoid_param = "&avoid=traffic" if avoid_traffic else ""
     url = f"https://api.tomtom.com/routing/1/calculateRoute/{start_lat},{start_lon}:{end_lat},{end_lon}/json?key={TOMTOM_API_KEY}{avoid_param}"
@@ -42,20 +38,10 @@ def get_route(start_lat, start_lon, end_lat, end_lon, avoid_traffic=False):
     
     if "routes" in response:
         route = response["routes"][0]["legs"][0]
-        return route["points"], route["summary"]["lengthInMeters"], route["summary"]["travelTimeInSeconds"]
-    return None, None, None
+        return route["points"]
+    return None
 
-# Haversine Formula to Calculate Distance
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371  # Radius of Earth in KM
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a))
-    return R * c
-
-# Traffic Color Codes
+# Traffic Color
 def traffic_color(speed, free_flow):
     if not speed or not free_flow:
         return "gray"
@@ -65,13 +51,14 @@ def traffic_color(speed, free_flow):
         return "orange"  # Moderate Traffic
     return "red"  # Heavy Traffic
 
-# Display Traffic & Route Map
+# **✅ FIXED: Always return a Folium map**
 def show_traffic_map():
     start = get_lat_lon(current_location)
     end = get_lat_lon(destination)
 
     if not start[0] or not end[0]:
-        return "⚠️ Invalid locations. Please check your input."
+        st.error("⚠️ Invalid locations. Please check your input.")
+        return folium.Map(location=[20.5937, 78.9629], zoom_start=5)  # Default map of India
 
     m = folium.Map(location=start, zoom_start=12)
 
@@ -87,30 +74,20 @@ def show_traffic_map():
     folium.Marker(end, popup="🏁 Destination", icon=folium.Icon(color=end_color)).add_to(m)
 
     # Get Best Route & Alternative Route
-    main_route, main_distance, main_time = get_route(*start, *end)
-    alt_route, alt_distance, alt_time = get_route(*start, *end, avoid_traffic=True)
-
-    # Convert Time to Hours & Minutes
-    main_time_hr = f"{main_time//3600}h {main_time%3600//60}m" if main_time else "N/A"
-    alt_time_hr = f"{alt_time//3600}h {alt_time%3600//60}m" if alt_time else "N/A"
+    main_route = get_route(*start, *end)
+    alt_route = get_route(*start, *end, avoid_traffic=True)
 
     # Draw Main Route in Red (Heavy Traffic) or Blue (No Traffic)
     if main_route:
         route_color = "red" if start_color == "red" or end_color == "red" else "blue"
-        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in main_route], color=route_color, weight=6, tooltip="Main Route").add_to(m)
+        folium.PolyLine([(p["latitude"], p["longitude"]) for p in main_route], color=route_color, weight=6, tooltip="Main Route").add_to(m)
 
     # Draw Alternative Route in Green
     if alt_route:
-        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in alt_route], color="green", weight=6, tooltip="Alternative Route (Less Traffic)").add_to(m)
-
-    # Show Distance & Time in Sidebar
-    if main_distance and main_time:
-        st.sidebar.markdown(f"🚗 **Main Route:** {main_distance/1000:.2f} km, ⏳ {main_time_hr}")
-    if alt_distance and alt_time:
-        st.sidebar.markdown(f"🛣️ **Alternative Route:** {alt_distance/1000:.2f} km, ⏳ {alt_time_hr} (Less Traffic)")
+        folium.PolyLine([(p["latitude"], p["longitude"]) for p in alt_route], color="green", weight=6, tooltip="Alternative Route (Less Traffic)").add_to(m)
 
     return m
 
-# Display Results
+# ✅ FIX: Use `st_folium()` instead of `folium_static()`
 if current_location and destination:
     st_folium(show_traffic_map(), width=1200, height=600)
