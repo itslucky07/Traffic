@@ -3,12 +3,13 @@ import folium
 from streamlit_folium import folium_static
 from geopy.geocoders import Nominatim
 import requests
+from math import radians, cos, sin, asin, sqrt
 
 # 🚦 TomTom API Key (Replace with your actual API key)
 TOMTOM_API_KEY = "shXffocf9KYkZVUQviB8JYApUg0NSVoG"
 
 # Set Page Title
-st.set_page_config(page_title="🚦 Live Traffic & Route Finder", layout="wide")
+st.set_page_config(page_title="🚦 India Live Traffic & Route Finder", layout="wide")
 st.title("🚦 India Live Traffic & Route Finder")
 
 # Sidebar User Inputs
@@ -37,8 +38,39 @@ def get_route(start_lat, start_lon, end_lat, end_lon):
     response = requests.get(url).json()
     
     if "routes" in response:
-        return response["routes"][0]["legs"][0]["points"]
-    return None
+        route = response["routes"][0]["legs"][0]
+        return route["points"], route["summary"]["lengthInMeters"], route["summary"]["travelTimeInSeconds"]
+    return None, None, None
+
+# Suggest Alternative Route (Less Traffic)
+def get_alternate_route(start_lat, start_lon, end_lat, end_lon):
+    url = f"https://api.tomtom.com/routing/1/calculateRoute/{start_lat},{start_lon}:{end_lat},{end_lon}/json?avoid=traffic&key={TOMTOM_API_KEY}"
+    response = requests.get(url).json()
+    
+    if "routes" in response:
+        route = response["routes"][0]["legs"][0]
+        return route["points"], route["summary"]["lengthInMeters"], route["summary"]["travelTimeInSeconds"]
+    return None, None, None
+
+# Haversine Formula to Calculate Distance
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371  # Radius of Earth in KM
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    return R * c
+
+# Traffic Color Code
+def traffic_color(speed, free_flow):
+    if not speed or not free_flow:
+        return "gray"
+    if speed >= free_flow * 0.8:
+        return "blue"  # No Traffic
+    elif speed >= free_flow * 0.5:
+        return "orange"  # Moderate Traffic
+    return "red"  # Heavy Traffic
 
 # Display Traffic & Route Map
 def show_traffic_map():
@@ -54,14 +86,6 @@ def show_traffic_map():
     start_speed, start_free_flow = get_traffic_status(*start)
     end_speed, end_free_flow = get_traffic_status(*end)
 
-    # Determine Traffic Conditions
-    def traffic_color(speed, free_flow):
-        if speed >= free_flow * 0.8:
-            return "green"
-        elif speed >= free_flow * 0.5:
-            return "orange"
-        return "red"
-
     start_color = traffic_color(start_speed, start_free_flow)
     end_color = traffic_color(end_speed, end_free_flow)
 
@@ -69,10 +93,23 @@ def show_traffic_map():
     folium.Marker(start, popup="🚗 Start", icon=folium.Icon(color=start_color)).add_to(m)
     folium.Marker(end, popup="🏁 Destination", icon=folium.Icon(color=end_color)).add_to(m)
 
-    # Get Route & Draw on Map
-    route_points = get_route(*start, *end)
-    if route_points:
-        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in route_points], color="blue", weight=6).add_to(m)
+    # Get Main Route & Alternative Route
+    main_route, main_distance, main_time = get_route(*start, *end)
+    alt_route, alt_distance, alt_time = get_alternate_route(*start, *end)
+
+    # Draw Main Route in Blue
+    if main_route:
+        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in main_route], color="blue", weight=6, tooltip="Main Route").add_to(m)
+
+    # Draw Alternative Route in Green
+    if alt_route:
+        folium.PolyLine(locations=[(p["latitude"], p["longitude"]) for p in alt_route], color="green", weight=6, tooltip="Alternative Route").add_to(m)
+
+    # Show Distance & Time
+    if main_distance and main_time:
+        st.sidebar.markdown(f"🚗 **Main Route:** {main_distance/1000:.2f} km, ⏳ {main_time//60} min")
+    if alt_distance and alt_time:
+        st.sidebar.markdown(f"🛣️ **Alternative Route:** {alt_distance/1000:.2f} km, ⏳ {alt_time//60} min (Less Traffic)")
 
     return m
 
