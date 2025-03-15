@@ -7,8 +7,7 @@ import requests
 # 🗺️ TomTom API Key (Replace with your valid API Key)
 TOMTOM_API_KEY = "shXffocf9KYkZVUQviB8JYApUg0NSVoG"
 
-st.set_page_config(page_title="🚦 India Traffic & Route Finder", layout="wide")
-
+st.set_page_config(page_title="🚦 India Live Traffic & Route", layout="wide")
 st.title("🚦 Live Traffic & Route Finder for India 🇮🇳")
 
 # Sidebar Inputs
@@ -22,24 +21,15 @@ def get_lat_lon(location):
     location_data = geolocator.geocode(location + ", India")
     return (location_data.latitude, location_data.longitude) if location_data else (None, None)
 
-# Function to fetch traffic data
+# Function to fetch traffic status for a point
 def get_traffic_status(lat, lon):
     url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point={lat},{lon}&key={TOMTOM_API_KEY}"
     response = requests.get(url).json()
     if "flowSegmentData" in response:
-        return response["flowSegmentData"]["currentSpeed"], response["flowSegmentData"]["freeFlowSpeed"]
+        speed = response["flowSegmentData"]["currentSpeed"]
+        free_flow = response["flowSegmentData"]["freeFlowSpeed"]
+        return speed, free_flow
     return None, None
-
-# Function to get route data
-def get_route(start_lat, start_lon, end_lat, end_lon, avoid_traffic=False):
-    avoid_param = "&avoid=traffic" if avoid_traffic else ""
-    url = f"https://api.tomtom.com/routing/1/calculateRoute/{start_lat},{start_lon}:{end_lat},{end_lon}/json?key={TOMTOM_API_KEY}{avoid_param}"
-    response = requests.get(url).json()
-    
-    if "routes" in response:
-        route = response["routes"][0]["legs"][0]
-        return route["points"], route["summary"]["lengthInMeters"] / 1000, route["summary"]["travelTimeInSeconds"] / 3600
-    return None, None, None
 
 # Function to determine traffic color
 def traffic_color(speed, free_flow):
@@ -51,7 +41,17 @@ def traffic_color(speed, free_flow):
         return "orange"  # Moderate Traffic
     return "red"  # Heavy Traffic
 
-# Function to generate the map
+# Function to get route data
+def get_route(start_lat, start_lon, end_lat, end_lon):
+    url = f"https://api.tomtom.com/routing/1/calculateRoute/{start_lat},{start_lon}:{end_lat},{end_lon}/json?key={TOMTOM_API_KEY}"
+    response = requests.get(url).json()
+    
+    if "routes" in response:
+        route_points = response["routes"][0]["legs"][0]["points"]
+        return route_points
+    return None
+
+# Function to generate the map with traffic colors
 def show_traffic_map():
     start = get_lat_lon(current_location)
     end = get_lat_lon(destination)
@@ -62,35 +62,20 @@ def show_traffic_map():
 
     m = folium.Map(location=start, zoom_start=12)
 
-    # Get Traffic Data
-    start_speed, start_free_flow = get_traffic_status(*start)
-    end_speed, end_free_flow = get_traffic_status(*end)
+    # Get Route
+    route = get_route(*start, *end)
 
-    start_color = traffic_color(start_speed, start_free_flow)
-    end_color = traffic_color(end_speed, end_free_flow)
+    if route:
+        for i in range(len(route) - 1):
+            lat1, lon1 = route[i]["latitude"], route[i]["longitude"]
+            lat2, lon2 = route[i + 1]["latitude"], route[i + 1]["longitude"]
 
-    # Add Markers
-    folium.Marker(start, popup="🚗 Start", icon=folium.Icon(color=start_color)).add_to(m)
-    folium.Marker(end, popup="🏁 Destination", icon=folium.Icon(color=end_color)).add_to(m)
+            # Fetch traffic for this segment
+            speed, free_flow = get_traffic_status(lat1, lon1)
+            color = traffic_color(speed, free_flow)
 
-    # Get Main & Alternative Route
-    main_route, main_distance, main_time = get_route(*start, *end)
-    alt_route, alt_distance, alt_time = get_route(*start, *end, avoid_traffic=True)
-
-    # Draw Main Route in Red/Blue based on Traffic
-    if main_route:
-        route_color = "red" if start_color == "red" or end_color == "red" else "blue"
-        folium.PolyLine([(p["latitude"], p["longitude"]) for p in main_route], color=route_color, weight=6, tooltip="Main Route").add_to(m)
-
-    # Draw Alternative Route in Green
-    if alt_route:
-        folium.PolyLine([(p["latitude"], p["longitude"]) for p in alt_route], color="green", weight=6, tooltip="Alternative Route (Less Traffic)").add_to(m)
-
-    # Display Distance & Time
-    if main_distance and alt_distance:
-        st.markdown("### 📏 Distance & ETA")
-        st.write(f"🛑 **Main Route:** {main_distance:.2f} km | ⏳ {main_time:.2f} hrs")
-        st.write(f"🟢 **Alternative Route:** {alt_distance:.2f} km | ⏳ {alt_time:.2f} hrs (Recommended)")
+            # Draw segment with traffic color
+            folium.PolyLine([(lat1, lon1), (lat2, lon2)], color=color, weight=6).add_to(m)
 
     return m
 
